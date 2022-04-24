@@ -1,7 +1,7 @@
 {
   "p4": {
     "description1": {
-      "string": "Converts Scratch projects into HTML files, zip archives, or executable programs for Windows, macOS, and Linux."
+      "string": "Converts Scratch projects into HTML files, zip archives, or executable programs for Windows, macOS, Linux, and Android."
     },
     "description2": {
       "string": "If you just want an easy way to embed a project into your website, you may be interested in {embedding}."
@@ -11,9 +11,6 @@
     },
     "description3": {
       "string": "Report bugs, give feedback, and suggest ideas {onScratch} or {onGitHub}."
-    },
-    "disclaimer": {
-      "string": "This site is not affiliated with Scratch, the Scratch Team, or the Scratch Foundation."
     },
     "description3-on": {
       "string": "on {brand}",
@@ -25,20 +22,8 @@
     "errorMessage": {
       "string": "Message: {error}"
     },
-    "networkError": {
-      "string": "Couldn't download {url}. Make sure you're connected to the internet and try disabling any browser extensions.",
-      "context": "Error displayed when an attempt to download a file failed for an unknown reason."
-    },
-    "outdated": {
-      "string": "This version of the packager appears to be outdated. Please refresh and try again.",
-      "context": "Error displayed when the packager detects that you are using an old version and that you must refresh to continue."
-    },
     "close": {
       "string": "Close"
-    },
-    "refresh": {
-      "string": "Refresh",
-      "context": "Button in some error messages that refreshes/reloads the page"
     },
     "reportBug": {
       "string": "Report Bug"
@@ -62,24 +47,23 @@
   },
   "progress": {
     "loadingAssets": {
-      "string": "Downloading assets ({complete}/{total})"
+      "string": "Loading assets ({complete}/{total})"
     },
     "compressingProject": {
       "string": "Compressing project"
     },
     "loadingProjectData": {
-      "string": "Downloading project data"
+      "string": "Loading project data"
     },
     "packagingProject": {
       "string": "Packaging project"
     },
     "loadingLargeAsset": {
-      "string": "Downloading {thing}",
+      "string": "Loading {thing}",
       "context": "Generic loading message used when loading a 'brand name' file such as NW.js or Electron."
     },
     "loadingScripts": {
-      "string": "Downloading scripts",
-      "context": "Loading message used when loading the Scratch runtime"
+      "string": "Loading scripts"
     }
   },
   "select": {
@@ -173,10 +157,6 @@
     "username": {
       "string": "Username (each \"#\" gets replaced with a random number)"
     },
-    "customUsernameWarning": {
-      "string": "Be careful when changing the default username as it can cause connections to the default cloud variable server to be blocked. Only the default username is guaranteed to work.",
-      "context": "Warning that appears when using custom username and cloud variables at the same time."
-    },
     "autoplay": {
       "string": "Start project automatically instead of showing a big green flag"
     },
@@ -255,9 +235,6 @@
     "editableLists": {
       "string": "Editable lists"
     },
-    "variableColor": {
-      "string": "Variable color"
-    },
     "interaction": {
       "string": "Input",
       "context": "Input settings header"
@@ -270,14 +247,6 @@
     },
     "customCursor": {
       "string": "Custom cursor"
-    },
-    "cursorCenter": {
-      "string": "Cursor center:",
-      "context": "Option to configure the center of a custom cursor. Followed by 'X: (input) Y: (input)'"
-    },
-    "automaticallyCenter": {
-      "string": "Automatically center",
-      "context": "Button that automatically centers a custom cursor"
     },
     "cursorHelp": {
       "string": "Images up to 32x32 work best. Larger images may not work reliably."
@@ -346,16 +315,6 @@
       "string": "Special cloud variable behaviors like HTMLifier",
       "context": "Do not translate 'HTMLifier'"
     },
-    "unsafeCloudBehaviors": {
-      "string": "Additional unsafe special cloud behaviors"
-    },
-    "unsafeCloudBehaviorsWarning": {
-      "string": "Unsafe cloud behaviors allows the packaged project to execute arbitrary code outside of the \"sandbox\" that projects are typically executed in. Depending on the environment you're packaging for, this grants projects full control over your computer, including the ability to install viruses. If you do not trust the project you're packaging, please turn off this option.",
-      "context": "Warning that appears when unsafe cloud behaviors is enabled."
-    },
-    "implicitCloudHint": {
-      "string": "Tip: Any variable with a name starting with \"{cloud}\" will be converted to a cloud variable regardless of whether it was marked as one."
-    },
     "enableCompiler": {
       "string": "Enable Compiler"
     },
@@ -408,6 +367,9 @@
       "string": "{type} Linux application (64-bit only)",
       "context": "type will become something like 'NW.js' or 'Electron'. Do not translate 'Linux'."
     },
+    "application-android": {
+      "string": "Android app (Highly experimental)"
+    },
     "otherEnvironments": {
       "string": "Other environments (Click to open)",
       "context": "Text that can be clicked to expand list of environments to include some unrecommended ones."
@@ -425,15 +387,6 @@
     "packageNameHelp": {
       "string": "Package name should be a unique name used only by your application. The same project should always have the same package name."
     },
-    "startWindow": {
-      "string": "Start as window"
-    },
-    "startMaximized": {
-      "string": "Start as maximized window"
-    },
-    "startFullscreen": {
-      "string": "Start in fullscreen"
-    },
     "package": {
       "string": "Package",
       "context": "Button to package the project"
@@ -441,10 +394,6 @@
     "preview": {
       "string": "Preview",
       "context": "Button to preview the project"
-    },
-    "resetAll": {
-      "string": "Reset All",
-      "context": "Button that resets all settings"
     },
     "download": {
       "string": "Download {filename} ({size}MB)",
@@ -488,11 +437,7 @@
     },
     "confirm": {
       "string": "Are you sure you want to reset these settings? This cannot be undone.",
-      "context": "Prompt to confirm user wants to reset a specific subsection's settings"
-    },
-    "confirmAll": {
-      "string": "Are you sure you want to reset ALL settings? This cannot be undone.",
-      "context": "Prompt to confirm user wants to reset ALL settings for the current project"
+      "context": "Prompt to confirm user wants to reset settings"
     }
   },
   "preview": {
