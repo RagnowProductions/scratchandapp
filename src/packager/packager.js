@@ -1,5 +1,5 @@
 import {EventTarget, CustomEvent} from '../common/event-target';
-import sha256 from './sha256';
+import createChecksumWorker from '../build/p4-worker-loader!./sha256'
 import escapeXML from '../common/escape-xml';
 import largeAssets from './large-assets';
 import request from '../common/request';
@@ -7,9 +7,7 @@ import pngToAppleICNS from './icns';
 import {buildId, verifyBuildId} from './build-id';
 import {encode, decode} from './base85';
 import {parsePlist, generatePlist} from './plist';
-import {APP_NAME, WEBSITE, COPYRIGHT_NOTICE, ACCENT_COLOR} from './brand';
-import {OutdatedPackagerError} from '../common/errors';
-import {Adapter} from './adapter';
+import {APP_NAME, WEBSITE, COPYRIGHT_NOTICE} from './brand';
 
 const PROGRESS_LOADED_SCRIPTS = 0.1;
 
@@ -28,6 +26,13 @@ const removeUnnecessaryEmptyLines = (string) => string.split('\n')
     return true;
   })
   .join('\n');
+
+const sha256 = async (buffer) => {
+  const {worker, terminate} = createChecksumWorker();
+  const hash = await worker.sha256(buffer);
+  terminate();
+  return hash;
+};
 
 const getJSZip = async () => (await import(/* webpackChunkName: "jszip" */ 'jszip')).default;
 
@@ -133,7 +138,7 @@ class Packager extends EventTarget {
     }
   }
 
-  async fetchLargeAsset (name, type) {
+  async fetchLargeAsset (name) {
     this.ensureNotAborted();
     const asset = largeAssets[name];
     if (!asset) {
@@ -152,7 +157,7 @@ class Packager extends EventTarget {
     let result;
     let cameFromCache = false;
     try {
-      const cached = await Adapter.getCachedAsset(asset);
+      const cached = await Packager.adapter.getCachedAsset(asset);
       if (cached) {
         result = cached;
         cameFromCache = true;
@@ -168,7 +173,7 @@ class Packager extends EventTarget {
       }
       result = await request({
         url,
-        type,
+        type: asset.type,
         estimatedSize: asset.estimatedSize,
         progressCallback: (progress) => {
           dispatchProgress(progress);
@@ -177,7 +182,7 @@ class Packager extends EventTarget {
       });
     }
     if (asset.useBuildId && !verifyBuildId(buildId, result)) {
-      throw new OutdatedPackagerError('Build ID does not match.');
+      throw new Error('Build ID mismatch; This should be fixed after refreshing the page.');
     }
     if (asset.sha256) {
       const hash = await sha256(result);
@@ -187,7 +192,7 @@ class Packager extends EventTarget {
     }
     if (!cameFromCache) {
       try {
-        await Adapter.cacheAsset(asset, result);
+        await Packager.adapter.cacheAsset(asset, result);
       } catch (e) {
         console.warn(e);
       }
@@ -200,7 +205,6 @@ class Packager extends EventTarget {
     return {
       ...this.options.chunks,
       specialCloudBehaviors: this.options.cloudVariables.specialCloudBehaviors,
-      unsafeCloudBehaviors: this.options.cloudVariables.unsafeCloudBehaviors,
       pause: this.options.controls.pause.enabled
     };
   }
@@ -208,12 +212,12 @@ class Packager extends EventTarget {
   async loadResources () {
     const texts = [COPYRIGHT_HEADER];
     if (this.project.analysis.usesMusic) {
-      texts.push(await this.fetchLargeAsset('scaffolding', 'text'));
+      texts.push(await this.fetchLargeAsset('scaffolding'));
     } else {
-      texts.push(await this.fetchLargeAsset('scaffolding-min', 'text'));
+      texts.push(await this.fetchLargeAsset('scaffolding-min'));
     }
     if (Object.values(this.getAddonOptions()).some((i) => i)) {
-      texts.push(await this.fetchLargeAsset('addons', 'text'));
+      texts.push(await this.fetchLargeAsset('addons'));
     }
     this.script = texts.join('\n').replace(/<\/script>/g,"</scri'+'pt>");
   }
@@ -232,7 +236,7 @@ class Packager extends EventTarget {
   }
 
   async addNwJS (projectZip) {
-    const nwjsBuffer = await this.fetchLargeAsset(this.options.target, 'arraybuffer');
+    const nwjsBuffer = await this.fetchLargeAsset(this.options.target);
     const nwjsZip = await (await getJSZip()).loadAsync(nwjsBuffer);
 
     const isWindows = this.options.target.startsWith('nwjs-win');
@@ -285,7 +289,7 @@ class Packager extends EventTarget {
     }
 
     const ICON_NAME = 'icon.png';
-    const icon = await Adapter.getAppIcon(this.options.app.icon);
+    const icon = await Packager.adapter.getAppIcon(this.options.app.icon);
     const manifest = {
       name: packageName,
       main: 'main.js',
@@ -338,7 +342,7 @@ cd "$(dirname "$0")"
   }
 
   async addElectron (projectZip) {
-    const buffer = await this.fetchLargeAsset(this.options.target, 'arraybuffer');
+    const buffer = await this.fetchLargeAsset(this.options.target);
     const electronZip = await (await getJSZip()).loadAsync(buffer);
 
     const isWindows = this.options.target.includes('win');
@@ -383,7 +387,7 @@ cd "$(dirname "$0")"
     const electronMainName = 'electron-main.js';
     const iconName = 'icon.png';
 
-    const icon = await Adapter.getAppIcon(this.options.app.icon);
+    const icon = await Packager.adapter.getAppIcon(this.options.app.icon);
     zip.file(`${resourcePrefix}${iconName}`, icon);
 
     const manifest = {
@@ -393,7 +397,7 @@ cd "$(dirname "$0")"
     zip.file(`${resourcePrefix}package.json`, JSON.stringify(manifest));
 
     const mainJS = `'use strict';
-const {app, BrowserWindow, Menu, shell, screen, dialog} = require('electron');
+const {app, BrowserWindow, Menu, shell, screen} = require('electron');
 const path = require('path');
 
 const isWindows = process.platform === 'win32';
@@ -401,6 +405,7 @@ const isMac = process.platform === 'darwin';
 const isLinux = process.platform === 'linux';
 
 if (isMac) {
+  // TODO
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { role: 'appMenu' },
     { role: 'fileMenu' },
@@ -412,11 +417,6 @@ if (isMac) {
 } else {
   Menu.setApplicationMenu(null);
 }
-
-const resourcesURL = Object.assign(new URL('file://'), {
-  pathname: path.join(__dirname, '/')
-}).href;
-const defaultProjectURL = new URL('./index.html', resourcesURL).href;
 
 app.enableSandbox();
 
@@ -444,22 +444,15 @@ const createWindow = (windowOptions) => {
   return window;
 };
 
-const createProjectWindow = (url) => {
-  const windowMode = ${JSON.stringify(this.options.app.windowMode)};
+const createProjectWindow = () => {
   const window = createWindow({
-    show: false,
     backgroundColor: ${JSON.stringify(this.options.appearance.background)},
     width: ${this.computeWindowSize().width},
     height: ${this.computeWindowSize().height},
     minWidth: 50,
     minHeight: 50,
-    fullscreen: windowMode === 'fullscreen',
   });
-  if (windowMode === 'maximize') {
-    window.maximize();
-  }
-  window.loadURL(url);
-  window.show();
+  window.loadFile(path.resolve(__dirname, './index.html'));
 };
 
 const createDataWindow = (dataURI) => {
@@ -467,26 +460,10 @@ const createDataWindow = (dataURI) => {
   window.loadURL(dataURI);
 };
 
-const isResourceURL = (url) => {
-  try {
-    const parsedUrl = new URL(url);
-    return parsedUrl.protocol === 'file:' && parsedUrl.href.startsWith(resourcesURL);
-  } catch (e) {
-    // ignore
-  }
-  return false;
-};
-
-const SAFE_PROTOCOLS = [
-  'https:',
-  'http:',
-  'mailto:',
-];
-
 const isSafeOpenExternal = (url) => {
   try {
     const parsedUrl = new URL(url);
-    return SAFE_PROTOCOLS.includes(parsedUrl.protocol);
+    return parsedUrl.protocol === 'https:' || parsedUrl.protocol === 'http:';
   } catch (e) {
     // ignore
   }
@@ -504,23 +481,12 @@ const isDataURL = (url) => {
 };
 
 const openLink = (url) => {
-  if (isDataURL(url)) {
-    createDataWindow(url);
-  } else if (isResourceURL(url)) {
-    createProjectWindow(url);
-  } else if (isSafeOpenExternal(url)) {
+  if (isSafeOpenExternal(url)) {
     shell.openExternal(url);
+  } else if (isDataURL(url)) {
+    createDataWindow(url);
   }
 };
-
-app.on('render-process-gone', (event, webContents, details) => {
-  const window = BrowserWindow.fromWebContents(webContents);
-  dialog.showMessageBoxSync(window, {
-    type: 'error',
-    title: 'Error',
-    message: 'Renderer process crashed: ' + details.reason + ' (' + details.exitCode + ')'
-  });
-});
 
 app.on('web-contents-created', (event, contents) => {
   contents.setWindowOpenHandler((details) => {
@@ -530,19 +496,8 @@ app.on('web-contents-created', (event, contents) => {
     return {action: 'deny'};
   });
   contents.on('will-navigate', (e, url) => {
-    if (!isResourceURL(url)) {
-      e.preventDefault();
-      openLink(url);
-    }
-  });
-  contents.on('before-input-event', (e, input) => {
-    const window = BrowserWindow.fromWebContents(contents);
-    if (!window || input.type !== "keyDown") return;
-    if (input.key === 'F11' || (input.key === 'Enter' && input.alt)) {
-      window.setFullScreen(!window.isFullScreen());
-    } else if (input.key === 'Escape' && window.isFullScreen()) {
-      window.setFullScreen(false);
-    }
+    e.preventDefault();
+    openLink(url);
   });
 });
 
@@ -551,7 +506,12 @@ app.on('window-all-closed', () => {
 });
 
 app.whenReady().then(() => {
-  createProjectWindow(defaultProjectURL);
+  createProjectWindow();
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createProjectWindow();
+    }
+  });
 });
 `;
     zip.file(`${resourcePrefix}${electronMainName}`, mainJS);
@@ -577,7 +537,7 @@ cd "$(dirname "$0")"
   }
 
   async addWebViewMac (projectZip) {
-    const buffer = await this.fetchLargeAsset(this.options.target, 'arraybuffer');
+    const buffer = await this.fetchLargeAsset(this.options.target);
     const appZip = await (await getJSZip()).loadAsync(buffer);
 
     // +-- WebView.app
@@ -607,7 +567,7 @@ cd "$(dirname "$0")"
       setFileFast(zip, `${resourcePrefix}${path}`, data);
     }
 
-    const icon = await Adapter.getAppIcon(this.options.app.icon);
+    const icon = await Packager.adapter.getAppIcon(this.options.app.icon);
     const icns = await pngToAppleICNS(icon);
     zip.file(`${resourcePrefix}AppIcon.icns`, icns);
     zip.remove(`${resourcePrefix}Assets.car`);
@@ -774,7 +734,7 @@ cd "$(dirname "$0")"
     if (this.options.app.icon === null) {
       return '';
     }
-    const data = await Adapter.readAsURL(this.options.app.icon, 'app icon');
+    const data = await Packager.adapter.readAsURL(this.options.app.icon, 'app icon');
     return `<link rel="icon" href="${data}">`;
   }
 
@@ -783,15 +743,15 @@ cd "$(dirname "$0")"
       return this.options.cursor.type;
     }
     if (!this.options.cursor.custom) {
-      // Configured to use a custom cursor but no image was selected
+      // Set to custom but no data, so ignore
       return 'auto';
     }
-    const data = await Adapter.readAsURL(this.options.cursor.custom, 'custom cursor');
-    return `url(${data}) ${this.options.cursor.center.x} ${this.options.cursor.center.y}, auto`;
+    const data = await Packager.adapter.readAsURL(this.options.cursor.custom, 'custom cursor');
+    return `url(${data}), auto`;
   }
 
   async package () {
-    if (!Adapter) {
+    if (!Packager.adapter) {
       throw new Error('Missing adapter');
     }
     if (this.used) {
@@ -869,7 +829,7 @@ cd "$(dirname "$0")"
     }
     #loading {
       ${this.options.loadingScreen.image && this.options.loadingScreen.imageMode === 'stretch'
-        ? `background-image: url(${await Adapter.readAsURL(this.options.loadingScreen.image, 'stretched loading screen')});
+        ? `background-image: url(${await Packager.adapter.readAsURL(this.options.loadingScreen.image, 'stretched loading screen')});
       background-repeat: no-repeat;
       background-size: contain;
       background-position: center;`
@@ -886,7 +846,7 @@ cd "$(dirname "$0")"
       width: 0;
       background-color: currentColor;
     }
-    .loading-text, noscript {
+    .loading-text {
       font-weight: normal;
       font-size: 36px;
       margin: 0 0 16px;
@@ -940,15 +900,14 @@ cd "$(dirname "$0")"
     .sc-canvas {
       cursor: ${await this.generateCursor()};
     }
-    .sc-monitor-root[opcode^="data_"] .sc-monitor-value-color {
-      background-color: ${this.options.monitors.variableColor} !important;
-    }
     ${this.options.custom.css}
   </style>
   <meta name="theme-color" content="${this.options.appearance.background}">
   ${await this.generateFavicon()}
 </head>
 <body>
+  <noscript>Enable JavaScript</noscript>
+
   <div id="app"></div>
 
   <div id="launch" class="screen" hidden title="Click to start">
@@ -962,9 +921,8 @@ cd "$(dirname "$0")"
   </div>
 
   <div id="loading" class="screen">
-    <noscript>Enable JavaScript</noscript>
     ${this.options.loadingScreen.text ? `<h1 class="loading-text">${escapeXML(this.options.loadingScreen.text)}</h1>` : ''}
-    ${this.options.loadingScreen.image && this.options.loadingScreen.imageMode === 'normal' ? `<div class="loading-image"><img src="${await Adapter.readAsURL(this.options.loadingScreen.image, 'loading-screen')}"></div>` : ''}
+    ${this.options.loadingScreen.image && this.options.loadingScreen.imageMode === 'normal' ? `<div class="loading-image"><img src="${await Packager.adapter.readAsURL(this.options.loadingScreen.image, 'loading-screen')}"></div>` : ''}
     ${this.options.loadingScreen.progressBar ? '<div class="progress-bar-outer"><div class="progress-bar-inner" id="loading-inner"></div></div>' : ''}
   </div>
 
@@ -1011,16 +969,9 @@ cd "$(dirname "$0")"
       scaffolding.setup();
       scaffolding.appendTo(appElement);
 
-      const vm = scaffolding.vm;
       window.scaffolding = scaffolding;
       window.vm = scaffolding.vm;
-      window.Scratch = {
-        vm,
-        renderer: vm.renderer,
-        audioEngine: vm.runtime.audioEngine,
-        bitmapAdapter: vm.runtime.v2BitmapAdapter,
-        videoProvider: vm.runtime.ioDevices.video.provider
-      };
+      const vm = scaffolding.vm;
 
       scaffolding.setUsername(${JSON.stringify(this.options.username)}.replace(/#/g, () => Math.floor(Math.random() * 10)));
       scaffolding.setAccentColor(${JSON.stringify(this.options.appearance.accent)});
@@ -1154,6 +1105,23 @@ cd "$(dirname "$0")"
         vm.extensionManager.loadExtensionURL(extension);
       }
 
+      ${this.options.target === 'android' ? `
+      // By default, storage will try to use fetch() in a Worker
+      // That doesn't work in an Android WebView, but XHR does, so...
+      scaffolding.storage.addHelper({
+        load: (assetType, assetId, dataFormat) => new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.responseType = "arraybuffer";
+          xhr.onerror = () => reject(new Error("Request failed"));
+          xhr.onload = () => resolve(new scaffolding.storage.Asset(assetType, assetId, dataFormat, new Uint8Array(xhr.response)));
+          xhr.open("GET", './assets/' + assetId + '.' + dataFormat);
+          xhr.send();
+        }),
+        // Above default tool, below "builtin" tool
+        priority: 50
+      });
+      ` : ''}
+
       ${this.options.target.startsWith('nwjs-') ? `
       if (typeof nw !== 'undefined') {
         const win = nw.Window.get();
@@ -1171,6 +1139,18 @@ cd "$(dirname "$0")"
           }
         });
       }` : ''}
+
+      ${this.options.target.startsWith('electron-') ? `
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'F11' || (e.key === 'Enter' && e.altKey)) {
+          e.preventDefault();
+          if (document.fullscreenElement) {
+            document.exitFullscreen();
+          } else {
+            document.body.requestFullscreen();
+          }
+        }
+      });` : ''}
     } catch (e) {
       handleError(e);
     }
@@ -1250,6 +1230,8 @@ cd "$(dirname "$0")"
   }
 }
 
+Packager.adapter = null;
+
 Packager.getDefaultPackageNameFromFileName = (title) => {
   // Remove file extension
   title = title.split('.')[0];
@@ -1286,7 +1268,7 @@ Packager.DEFAULT_OPTIONS = () => ({
   appearance: {
     background: '#000000',
     foreground: '#ffffff',
-    accent: ACCENT_COLOR
+    accent: '#ff4c4c'
   },
   loadingScreen: {
     progressBar: true,
@@ -1309,8 +1291,7 @@ Packager.DEFAULT_OPTIONS = () => ({
     }
   },
   monitors: {
-    editableLists: false,
-    variableColor: '#ff8c1a'
+    editableLists: false
   },
   compiler: {
     enabled: true,
@@ -1320,8 +1301,7 @@ Packager.DEFAULT_OPTIONS = () => ({
   app: {
     icon: null,
     packageName: Packager.getDefaultPackageNameFromFileName(''),
-    windowTitle: Packager.getWindowTitleFromFileName(''),
-    windowMode: 'window'
+    windowTitle: Packager.getWindowTitleFromFileName('')
   },
   chunks: {
     gamepad: false,
@@ -1332,15 +1312,10 @@ Packager.DEFAULT_OPTIONS = () => ({
     cloudHost: 'wss://clouddata.turbowarp.org',
     custom: {},
     specialCloudBehaviors: false,
-    unsafeCloudBehaviors: false,
   },
   cursor: {
     type: 'auto',
-    custom: null,
-    center: {
-      x: 0,
-      y: 0
-    }
+    custom: null
   },
   extensions: []
 });
